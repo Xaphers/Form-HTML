@@ -59,31 +59,60 @@ function eventModal(x={}){modal(x.eventId?"Edit event":"Create event",field("Eve
 async function usersPage(){const r=await api("users.list"),items=r.users||r.data?.users||r.data||[];const rows=(Array.isArray(items)?items:[]).map(x=>'<tr><td><strong>'+val(x,"name")+'</strong></td><td>'+val(x,"email")+'</td><td>'+badge(x.role)+'</td><td>'+badge(x.status)+'</td><td>'+val(x,"createdAt")+'</td><td><div class="actions"><button class="btn secondary small" data-user="'+esc(x.id)+'">Edit</button><button class="btn danger small" data-remove="'+esc(x.id)+'">Delete</button></div></td></tr>');shell("Users",pageHead("MANAGEMENT","Users","Manage user access and account status.")+'<div class="panel"><div class="panel-head"><h2>Platform users</h2></div><div class="toolbar"><input class="search" id="user-search" placeholder="Search name or email…"></div>'+table(["Name","Email","Role","Status","Created","Actions"],rows.length?rows:[])+'</div>',"/admin/users");if(!items.length)$("#app .panel").insertAdjacentHTML("beforeend",empty("No users found."));$("#user-search").oninput=e=>$("#app tbody").querySelectorAll("tr").forEach(tr=>tr.hidden=!tr.textContent.toLowerCase().includes(e.target.value.toLowerCase()));$("#app").querySelectorAll("[data-user]").forEach(b=>b.onclick=()=>{const u=items.find(x=>x.id===b.dataset.user);modal("Update user",field("Name","name",u.name)+field("Email","email",u.email,"email")+'<div class="field"><label>Role</label><select name="role"><option>admin</option><option>stand_holder</option></select></div><div class="field"><label>Status</label><select name="status"><option>active</option><option>inactive</option></select></div>',d=>api("users.update",{...d,id:u.id}))});$("#app").querySelectorAll("[data-remove]").forEach(b=>b.onclick=async()=>{if(confirm("Delete this user?")){await api("users.delete",{id:b.dataset.remove});route()}})}
 async function standsPage(){
  const r=await api("stands.list"),raw=r.stands||r.data?.stands||r.data||[],items=Array.isArray(raw)?raw:[];
- const rows=items.map(x=>{
-  const registration=String(x.registrationStatus||"pending").toLowerCase();
-  const stand=String(x.standStatus||"inactive").toLowerCase();
-  let actions="";
-  if(registration==="pending"||registration==="submitted"){
-   actions='<button class="btn success small" data-approve="'+esc(x.standId)+'">Approve</button><button class="btn danger small" data-reject="'+esc(x.standId)+'">Decline</button>';
-  }else if(registration==="approved"){
-   actions=stand==="active"?'<button class="btn danger small" data-deactivate="'+esc(x.standId)+'">Deactivate</button>':'<button class="btn success small" data-activate="'+esc(x.standId)+'">Activate</button>';
-  }else{
-   actions='<span class="muted">No actions</span>';
-  }
-  return '<tr><td><strong>'+val(x,"standName")+'</strong></td><td>'+val(x,"eventName")+'</td><td>'+val(x,"ownerName")+'<br><small class="muted">'+val(x,"ownerEmail")+'</small></td><td>'+badge(x.registrationStatus)+'</td><td>'+badge(x.standStatus)+'</td><td><div class="actions">'+actions+'<button class="btn secondary small" data-stand-detail="'+esc(x.standId)+'">View detail</button></div></td></tr>';
- });
- shell("Stand registrations",pageHead("REGISTRATIONS","Stand Registrations","Review applications and control approved stands.")+'<div class="panel"><div class="panel-head"><h2>Applications</h2><span class="badge">'+items.length+' stands</span></div>'+table(["Stand","Event","Owner","Registration","Stand status","Actions"],rows)+'</div>',"/admin/stands");
- if(!items.length)$("#app .panel").insertAdjacentHTML("beforeend",empty("No stand registrations yet."));
- const updateStatus=async(button,statusKey,statusValue,question)=>{
-  if(!confirm(question))return;button.disabled=true;
-  try{await api("stands.update",{standId:button.dataset.approve||button.dataset.reject||button.dataset.activate||button.dataset.deactivate,[statusKey]:statusValue});await standsPage()}
-  catch(err){alert(err.message);button.disabled=false}
+ let filter="all",search="";
+ const counts={pending:items.filter(x=>x.registrationStatus==="pending").length,approved:items.filter(x=>x.registrationStatus==="approved").length,rejected:items.filter(x=>x.registrationStatus==="rejected").length};
+ const link=x=>location.origin+"/review/"+encodeURIComponent(x.standId||"");
+ const ready=x=>String(x.registrationStatus).toLowerCase()==="approved"&&String(x.standStatus).toLowerCase()==="active";
+ const exportCsv=()=>{
+  const list=items.filter(x=>(filter==="all"||String(x.registrationStatus).toLowerCase()===filter)&&[x.standName,x.standId,x.eventName,x.ownerName,x.ownerEmail].join(" ").toLowerCase().includes(search));
+  if(!list.length)return alert("Tidak ada data untuk diexport.");
+  const cell=v=>'"'+String(v??"").replace(/"/g,'""')+'"';
+  const data=[["Stand ID","Stand Name","Event Name","Owner Name","Owner Email","Registration Status","Stand Status","Created At","Public Form Link"],...list.map(x=>[x.standId,x.standName,x.eventName,x.ownerName,x.ownerEmail,x.registrationStatus,x.standStatus,x.createdAt,ready(x)?link(x):""])];
+  const blob=new Blob(["\\uFEFF"+data.map(row=>row.map(cell).join(",")).join("\\r\\n")],{type:"text/csv;charset=utf-8"});
+  const url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="stand-registrations-"+new Date().toISOString().slice(0,10)+".csv";document.body.append(a);a.click();a.remove();URL.revokeObjectURL(url);
  };
- $("#app").querySelectorAll("[data-approve]").forEach(b=>b.onclick=()=>updateStatus(b,"registrationStatus","approved","Approve this stand registration?"));
- $("#app").querySelectorAll("[data-reject]").forEach(b=>b.onclick=()=>updateStatus(b,"registrationStatus","rejected","Decline this stand registration?"));
- $("#app").querySelectorAll("[data-activate]").forEach(b=>b.onclick=()=>updateStatus(b,"standStatus","active","Activate this stand?"));
- $("#app").querySelectorAll("[data-deactivate]").forEach(b=>b.onclick=()=>updateStatus(b,"standStatus","inactive","Deactivate this stand?"));
- $("#app").querySelectorAll("[data-stand-detail]").forEach(b=>b.onclick=()=>showDetails("Stand details",items.find(x=>String(x.standId)===b.dataset.standDetail)));
+ const copyLink=async(id,b)=>{
+  const x=items.find(s=>String(s.standId)===String(id));if(!x)return;const url=link(x);
+  try{
+   if(navigator.clipboard&&window.isSecureContext)await navigator.clipboard.writeText(url);
+   else{const t=document.createElement("textarea");t.value=url;t.style.position="fixed";t.style.opacity="0";document.body.append(t);t.select();const ok=document.execCommand("copy");t.remove();if(!ok)throw Error("copy failed")}
+   b.textContent="Copied!";const old=$("#stands-message");if(old)old.remove();$("#stands-toolbar").insertAdjacentHTML("afterend",notice("Public form link berhasil disalin: "+url));$("#app .notice")?.setAttribute("id","stands-message");setTimeout(()=>{if(b.isConnected)b.textContent="Copy Form Link"},1800);
+  }catch{prompt("Salin public form link berikut:",url)}
+ };
+ const render=()=>{
+  const list=items.filter(x=>(filter==="all"||String(x.registrationStatus).toLowerCase()===filter)&&[x.standName,x.standId,x.eventName,x.ownerName,x.ownerEmail].join(" ").toLowerCase().includes(search));
+  const rows=list.map(x=>{
+   const reg=String(x.registrationStatus||"pending").toLowerCase(),st=String(x.standStatus||"inactive").toLowerCase();
+   let actions=reg==="pending"||reg==="submitted"?'<button class="btn success small" data-approve="'+esc(x.standId)+'">Approve</button><button class="btn danger small" data-reject="'+esc(x.standId)+'">Decline</button>':reg==="approved"?(st==="active"?'<button class="btn danger small" data-deactivate="'+esc(x.standId)+'">Deactivate</button>':'<button class="btn success small" data-activate="'+esc(x.standId)+'">Activate</button>'):'<span class="muted">No actions</span>';
+   const publicLink=ready(x)?'<button class="btn secondary small" data-copy-link="'+esc(x.standId)+'">Copy Form Link</button>':'<span class="muted">Not available</span>';
+   return '<tr><td><strong>'+val(x,"standName")+'</strong><br><small class="muted">'+val(x,"standId")+'</small></td><td>'+val(x,"eventName")+'</td><td>'+val(x,"ownerName")+'<br><small class="muted">'+val(x,"ownerEmail")+'</small></td><td>'+badge(x.registrationStatus)+'</td><td>'+badge(x.standStatus)+'</td><td>'+publicLink+'</td><td><div class="actions">'+actions+'<button class="btn secondary small" data-stand-detail="'+esc(x.standId)+'">View detail</button></div></td></tr>';
+  });
+  $("#stands-table").innerHTML=table(["Stand","Event","Owner","Registration","Stand status","Public form","Actions"],rows);
+  if(!list.length)$("#stands-table").insertAdjacentHTML("beforeend",empty("No stands match your filter."));
+  $("#stands-count").textContent=list.length+" stands";
+  $("#stands-table").querySelectorAll("[data-copy-link]").forEach(b=>b.onclick=()=>copyLink(b.dataset.copyLink,b));
+  $("#stands-table").querySelectorAll("[data-stand-detail]").forEach(b=>b.onclick=()=>showDetails("Stand details",items.find(x=>String(x.standId)===b.dataset.standDetail)));
+  const change=async(b,key,value,label)=>{
+   if(!confirm(label))return;b.disabled=true;const id=b.dataset.approve||b.dataset.reject||b.dataset.activate||b.dataset.deactivate;
+   const current=items.find(x=>String(x.standId)===String(id))||{};
+   const payload={standId:id,registrationStatus:current.registrationStatus||"pending",standStatus:current.standStatus||"inactive",[key]:value};
+   if(key==="registrationStatus")payload.standStatus="inactive";
+   try{await api("stands.update",payload);await standsPage()}catch(e){alert(e.message);b.disabled=false}
+  };
+  $("#stands-table").querySelectorAll("[data-approve]").forEach(b=>b.onclick=()=>change(b,"registrationStatus","approved","Approve this stand registration?"));
+  $("#stands-table").querySelectorAll("[data-reject]").forEach(b=>b.onclick=()=>change(b,"registrationStatus","rejected","Decline this stand registration?"));
+  $("#stands-table").querySelectorAll("[data-activate]").forEach(b=>b.onclick=()=>change(b,"standStatus","active","Activate this stand?"));
+  $("#stands-table").querySelectorAll("[data-deactivate]").forEach(b=>b.onclick=()=>change(b,"standStatus","inactive","Deactivate this stand?"));
+ };
+ const filters=[["all","All ("+items.length+")"],["pending","Pending ("+counts.pending+")"],["approved","Approved ("+counts.approved+")"],["rejected","Rejected ("+counts.rejected+")"]];
+ const body=pageHead("REGISTRATIONS","Stand Management","Review applications and manage public feedback forms.",'<button class="btn" id="export-stands">↓ Export CSV</button>')+
+ '<section class="cards">'+stat("Pending",counts.pending,"◷")+stat("Approved",counts.approved,"✓")+stat("Rejected",counts.rejected,"×")+'</section>'+
+ '<div class="panel"><div class="panel-head"><div><h2>Registered Stands</h2><p class="sub" style="margin-top:5px">Review applications submitted by Stand Holders.</p></div><span class="badge" id="stands-count">'+items.length+' stands</span></div>'+
+ '<div class="toolbar" id="stands-toolbar">'+filters.map(([v,t])=>'<button class="btn small '+(v==="all"?"":"ghost")+'" data-filter="'+v+'">'+t+'</button>').join("")+'<input class="search" id="stands-search" placeholder="Search stand, event, owner…"></div><div id="stands-table"></div></div>';
+ shell("Stand registrations",body,"/admin/stands");
+ $("#export-stands").onclick=exportCsv;$("#stands-search").oninput=e=>{search=e.target.value.toLowerCase();render()};
+ $("#stands-toolbar").querySelectorAll("[data-filter]").forEach(b=>b.onclick=()=>{filter=b.dataset.filter;$("#stands-toolbar").querySelectorAll("[data-filter]").forEach(x=>x.classList.toggle("ghost",x.dataset.filter!==filter));render()});
+ render();
 }
 async function responsesPage(){const r=await api("responses.list"),items=r.responses||r.data?.responses||r.data||[];const rows=(Array.isArray(items)?items:[]).map((x,i)=>'<tr><td>'+val(x,"timestamp")+'</td><td><strong>'+val(x,"participantName")+'</strong></td><td>'+val(x,"eventName")+'</td><td>'+val(x,"standName")+'</td><td>'+((x.answers||[]).length)+' answers</td><td><button class="btn secondary small" data-response-detail="'+i+'">View detail</button></td></tr>');shell("Responses",pageHead("FEEDBACK","Responses","Browse submitted feedback from all events.")+'<div class="panel"><div class="panel-head"><h2>All submissions</h2></div><div class="toolbar"><input class="search" id="response-search" placeholder="Search participant, event, stand…"></div>'+table(["Submitted","Participant","Event","Stand","Answers","Detail"],rows.length?rows:[])+'</div>',"/admin/responses");if(!items.length)$("#app .panel").insertAdjacentHTML("beforeend",empty("No responses submitted yet."));$("#app").querySelectorAll("[data-response-detail]").forEach(b=>b.onclick=()=>showDetails("Response details",items[Number(b.dataset.responseDetail)]));$("#response-search").oninput=e=>$("#app tbody").querySelectorAll("tr").forEach(tr=>tr.hidden=!tr.textContent.toLowerCase().includes(e.target.value.toLowerCase()))}
 async function analyticsPage(){const r=await api("analytics.get"),d=r.data||r;const body=pageHead("INSIGHTS","Analytics","A snapshot of feedback and event activity.")+'<div class="cards">'+stat("Total users",d.totalUsers,"♙")+stat("Events",d.totalEvents,"◈")+stat("Stands",d.totalStands,"▤")+stat("Responses",d.totalResponses,"▧")+'</div><div class="panel"><h2>Feedback overview</h2><div class="cards" style="margin:18px 0 0">'+stat("Average rating",d.averageRating??"—","★","Across all ratings")+stat("Total ratings",d.totalRatings??0,"✦","Ratings submitted")+'</div></div>';shell("Analytics",body,"/admin/analytics")}
