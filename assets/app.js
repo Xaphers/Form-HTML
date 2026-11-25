@@ -68,7 +68,7 @@ async function standsPage(){
   if(!list.length)return alert("Tidak ada data untuk diexport.");
   const cell=v=>'"'+String(v??"").replace(/"/g,'""')+'"';
   const data=[["Stand ID","Stand Name","Event Name","Owner Name","Owner Email","Registration Status","Stand Status","Created At","Public Form Link"],...list.map(x=>[x.standId,x.standName,x.eventName,x.ownerName,x.ownerEmail,x.registrationStatus,x.standStatus,x.createdAt,ready(x)?link(x):""])];
-  const blob=new Blob(["\\uFEFF"+data.map(row=>row.map(cell).join(",")).join("\\r\\n")],{type:"text/csv;charset=utf-8"});
+  const blob=new Blob(["\uFEFF"+data.map(row=>row.map(cell).join(",")).join("\r\n")],{type:"text/csv;charset=utf-8"});
   const url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="stand-registrations-"+new Date().toISOString().slice(0,10)+".csv";document.body.append(a);a.click();a.remove();URL.revokeObjectURL(url);
  };
  const copyLink=async(id,b)=>{
