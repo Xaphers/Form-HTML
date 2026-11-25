@@ -105,10 +105,10 @@ async function standsPage(){
   $("#stands-table").querySelectorAll("[data-deactivate]").forEach(b=>b.onclick=()=>change(b,"standStatus","inactive","Deactivate this stand?"));
  };
  const filters=[["all","All ("+items.length+")"],["pending","Pending ("+counts.pending+")"],["approved","Approved ("+counts.approved+")"],["rejected","Rejected ("+counts.rejected+")"]];
- const body=pageHead("REGISTRATIONS","Stand Management","Review applications and manage public feedback forms.",'<button class="btn" id="export-stands">↓ Export CSV</button>')+
+ const body=pageHead("REGISTRATIONS","Stand Management","Review applications and manage public feedback forms.")+
  '<section class="cards">'+stat("Pending",counts.pending,"◷")+stat("Approved",counts.approved,"✓")+stat("Rejected",counts.rejected,"×")+'</section>'+
  '<div class="panel"><div class="panel-head"><div><h2>Registered Stands</h2><p class="sub" style="margin-top:5px">Review applications submitted by Stand Holders.</p></div><span class="badge" id="stands-count">'+items.length+' stands</span></div>'+
- '<div class="toolbar" id="stands-toolbar">'+filters.map(([v,t])=>'<button class="btn small '+(v==="all"?"":"ghost")+'" data-filter="'+v+'">'+t+'</button>').join("")+'<input class="search" id="stands-search" placeholder="Search stand, event, owner…"></div><div id="stands-table"></div></div>';
+ '<div class="toolbar" id="stands-toolbar">'+filters.map(([v,t])=>'<button class="btn small '+(v==="all"?"":"ghost")+'" data-filter="'+v+'">'+t+'</button>').join("")+'<input class="search" id="stands-search" placeholder="Search stand, event, owner…"><button class="btn" id="export-stands" type="button">↓ Export CSV</button></div><div id="stands-table"></div></div>';
  shell("Stand registrations",body,"/admin/stands");
  $("#export-stands").onclick=exportCsv;$("#stands-search").oninput=e=>{search=e.target.value.toLowerCase();render()};
  $("#stands-toolbar").querySelectorAll("[data-filter]").forEach(b=>b.onclick=()=>{filter=b.dataset.filter;$("#stands-toolbar").querySelectorAll("[data-filter]").forEach(x=>x.classList.toggle("ghost",x.dataset.filter!==filter));render()});
